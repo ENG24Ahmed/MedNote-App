@@ -11,7 +11,7 @@ import 'package:path/path.dart' as p;
 class Settings {
   Settings._();
   static final Settings I = Settings._();
-
+fu gpt ;
   /// ملاحظة مهمة:
   /// - استدعِ `await Settings.I.init()` مرة واحدة في main() قبل runApp.
 
