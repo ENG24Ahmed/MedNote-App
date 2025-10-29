@@ -1,0 +1,65 @@
+name: mednote
+description: MedNote – Stage 1 (v1.0) skeleton
+publish_to: 'none'
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  cupertino_icons: ^1.0.8
+
+  # التعريب والتواريخ
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+
+  # ملفات ونُظم المسار
+  path_provider: ^2.1.3
+  path: ^1.9.0
+
+  # مشاركة الملفات (نسخة احتياطية/تقرير)
+  share_plus: ^7.2.2
+
+  # اختيار ملف من الجهاز (لاستيراد النسخة الاحتياطية)
+  file_picker: ^8.0.6
+
+  # تقارير
+  pdf: ^3.10.7
+  excel: ^4.0.2
+
+  # قاعدة البيانات المحلية + الإشعارات
+  sqflite: ^2.3.3
+  flutter_local_notifications: ^19.4.2
+  timezone: ^0.10.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+  # أداة إنشاء أيقونة التطبيق
+  flutter_launcher_icons: ^0.13.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/fonts/NotoNaskhArabic-Regular.ttf
+    - assets/fonts/NotoNaskhArabic-Bold.ttf
+    - assets/app_icon/app_icon_foreground.png
+    - assets/app_icon/app_icon_legacy.png
+
+flutter_icons:
+  android: true
+  ios: false
+
+  # للأجهزة القديمة
+  image_path_android: assets/app_icon/app_icon_legacy.png
+
+  # للأجهزة الحديثة (Adaptive Icon)
+  adaptive_icon_foreground: assets/app_icon/app_icon_foreground.png
+
+  # 🔹 خلفية سماوية (نفس لون واجهة تطبيقك)
+  adaptive_icon_background: "#80DEEA"
