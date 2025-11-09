@@ -29,9 +29,10 @@ class _AllTabState extends State<AllTab> with AutomaticKeepAliveClientMixin {
     super.build(context); // بسبب AutomaticKeepAliveClientMixin
 
     final doses = AppData.I.doses;
+    final stopped = AppData.I.stoppedMedicines;
     final patients = AppData.I.patients.map((p) => p.name).toList();
 
-    if (doses.isEmpty) {
+    if (doses.isEmpty && stopped.isEmpty) {
       return Column(
         children: [
           Padding(
@@ -100,52 +101,100 @@ class _AllTabState extends State<AllTab> with AutomaticKeepAliveClientMixin {
         const SizedBox(height: 4),
         Expanded(
           child: _selectedPatient == allPatientsLabel
-              ? _buildAllPatients(groups)
-              : _buildSinglePatient(groups, _selectedPatient),
+              ? _buildAllPatients(groups, stopped)
+              : _buildSinglePatient(groups, stopped, _selectedPatient),
         ),
       ],
     );
   }
 
-  Widget _buildAllPatients(Map<String, _MedGroup> groups) {
-    final byPatient = <String, List<_MedGroup>>{};
+  Widget _buildAllPatients(
+      Map<String, _MedGroup> groups, List<StoppedMedicine> stopped) {
+    final byPatientActive = <String, List<_MedGroup>>{};
     for (final g in groups.values) {
-      byPatient.putIfAbsent(g.patientName, () => []).add(g);
+      byPatientActive.putIfAbsent(g.patientName, () => []).add(g);
     }
-    for (final list in byPatient.values) {
+    for (final list in byPatientActive.values) {
       list.sort((a, b) => a.medicineName.compareTo(b.medicineName));
     }
-    final sortedPatientNames = byPatient.keys.toList()..sort();
+    final byPatientStopped = <String, List<StoppedMedicine>>{};
+    for (final s in stopped) {
+      byPatientStopped.putIfAbsent(s.patientName, () => []).add(s);
+    }
+    for (final list in byPatientStopped.values) {
+      list.sort((a, b) => a.medicineName.compareTo(b.medicineName));
+    }
+
+    final patientNames = <String>{
+      ...byPatientActive.keys,
+      ...byPatientStopped.keys,
+    };
+    final sortedPatientNames = patientNames.toList()..sort();
 
     return ListView.builder(
       padding: const EdgeInsets.all(12),
       itemCount: sortedPatientNames.length,
       itemBuilder: (ctx, i) {
         final patientName = sortedPatientNames[i];
-        final items = byPatient[patientName]!;
+        final activeItems = byPatientActive[patientName] ?? const <_MedGroup>[];
+        final stoppedItems =
+            byPatientStopped[patientName] ?? const <StoppedMedicine>[];
+        if (activeItems.isEmpty && stoppedItems.isEmpty) {
+          return const SizedBox.shrink();
+        }
         return _PatientSection(
           title: patientName,
-          items: items,
+          activeItems: activeItems,
+          stoppedItems: stoppedItems,
           onChanged: () => setState(() {}),
         );
       },
     );
   }
 
-  Widget _buildSinglePatient(Map<String, _MedGroup> groups, String patientName) {
+  Widget _buildSinglePatient(Map<String, _MedGroup> groups,
+      List<StoppedMedicine> stopped, String patientName) {
     final items = groups.values
         .where((g) => g.patientName == patientName)
         .toList()
       ..sort((a, b) => a.medicineName.compareTo(b.medicineName));
 
-    if (items.isEmpty) {
+    final stoppedItems = stopped
+        .where((s) => s.patientName == patientName)
+        .toList()
+      ..sort((a, b) => a.medicineName.compareTo(b.medicineName));
+
+    if (items.isEmpty && stoppedItems.isEmpty) {
       return Center(child: Text('لا توجد أدوية للمريض "$patientName"'));
     }
-    return ListView.separated(
+    return ListView(
       padding: const EdgeInsets.all(12),
-      itemCount: items.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
-      itemBuilder: (ctx, i) => _MedCard(group: items[i], onChanged: () => setState(() {})),
+      children: [
+        if (items.isNotEmpty) ...[
+          ...List.generate(
+            items.length,
+            (i) => Padding(
+              padding: EdgeInsets.only(bottom: i == items.length - 1 && stoppedItems.isEmpty ? 0 : 8),
+              child: _MedCard(group: items[i], onChanged: () => setState(() {})),
+            ),
+          ),
+        ],
+        if (stoppedItems.isNotEmpty) ...[
+          if (items.isNotEmpty) const SizedBox(height: 16),
+          _StoppedSectionHeader(),
+          const SizedBox(height: 8),
+          ...List.generate(
+            stoppedItems.length,
+            (i) => Padding(
+              padding: EdgeInsets.only(bottom: i == stoppedItems.length - 1 ? 0 : 8),
+              child: _StoppedMedCard(
+                stopped: stoppedItems[i],
+                onChanged: () => setState(() {}),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -155,9 +204,15 @@ class _AllTabState extends State<AllTab> with AutomaticKeepAliveClientMixin {
 
 class _PatientSection extends StatelessWidget {
   final String title;
-  final List<_MedGroup> items;
+  final List<_MedGroup> activeItems;
+  final List<StoppedMedicine> stoppedItems;
   final VoidCallback onChanged;
-  const _PatientSection({required this.title, required this.items, required this.onChanged});
+  const _PatientSection({
+    required this.title,
+    required this.activeItems,
+    required this.stoppedItems,
+    required this.onChanged,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -171,10 +226,19 @@ class _PatientSection extends StatelessWidget {
             style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
           ),
         ),
-        ...items.map((g) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: _MedCard(group: g, onChanged: onChanged),
-        )),
+        ...activeItems.map((g) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _MedCard(group: g, onChanged: onChanged),
+            )),
+        if (stoppedItems.isNotEmpty) ...[
+          if (activeItems.isNotEmpty) const SizedBox(height: 4),
+          _StoppedSectionHeader(),
+          const SizedBox(height: 8),
+          ...stoppedItems.map((s) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: _StoppedMedCard(stopped: s, onChanged: onChanged),
+              )),
+        ],
       ],
     );
   }
@@ -213,6 +277,52 @@ class _MedCard extends StatelessWidget {
     d.patientName == group.patientName &&
         d.medicineName == group.medicineName &&
         d.doseText == group.doseText);
+  }
+
+  Future<void> _stopGroup(BuildContext context) async {
+    final groupDoses = AppData.I.doses
+        .where((d) =>
+            d.patientName == group.patientName &&
+            d.medicineName == group.medicineName &&
+            d.doseText == group.doseText)
+        .toList();
+
+    if (groupDoses.isEmpty) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('إيقاف الدواء'),
+        content: Text(
+          'سيتم إيقاف الجرعات القادمة لدواء "${group.medicineName}" (${group.doseText}) للمريض ${group.patientName}.\nيمكنك استئنافه لاحقًا بإعادة إضافته.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إيقاف')),
+        ],
+      ),
+    );
+
+    if (ok != true) return;
+
+    for (final d in groupDoses) {
+      try {
+        await NotificationBridge.cancelDose(d);
+      } catch (_) {}
+    }
+
+    await AppData.I.stopDoseGroup(
+      patientName: group.patientName,
+      medicineName: group.medicineName,
+      doseText: group.doseText,
+    );
+
+    onChanged();
+    HomePage.gKey.currentState?.refreshTodayTab();
+
+    messenger.showSnackBar(const SnackBar(content: Text('تم إيقاف الدواء')));
   }
 
   @override
@@ -313,6 +423,11 @@ class _MedCard extends StatelessWidget {
               },
             ),
             IconButton(
+              tooltip: 'إيقاف',
+              icon: const Icon(Icons.pause_circle_filled, color: Colors.orange),
+              onPressed: () => _stopGroup(context),
+            ),
+            IconButton(
               tooltip: 'حذف',
               icon: const Icon(Icons.delete, color: Colors.red),
               onPressed: () async {
@@ -394,6 +509,88 @@ class _MedCard extends StatelessWidget {
       default:
         return Colors.blueGrey;
     }
+  }
+}
+
+class _StoppedSectionHeader extends StatelessWidget {
+  const _StoppedSectionHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = Colors.orange.shade700;
+    return Row(
+      children: [
+        Icon(Icons.pause_circle_filled, color: color),
+        const SizedBox(width: 6),
+        Text(
+          'أدوية موقوفة',
+          style: Theme.of(context)
+              .textTheme
+              .titleSmall
+              ?.copyWith(fontWeight: FontWeight.w600, color: color),
+        ),
+      ],
+    );
+  }
+}
+
+class _StoppedMedCard extends StatelessWidget {
+  final StoppedMedicine stopped;
+  final VoidCallback onChanged;
+  const _StoppedMedCard({super.key, required this.stopped, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final dateFmt = DateFormat.yMMMd('ar');
+    final timeFmt = DateFormat.jm('ar');
+    final typeName = _MedCard._inferTypeName(stopped.doseText);
+    final typeIcon = _MedCard._typeIcon(typeName);
+    final typeColor = _MedCard._typeColor(typeName);
+
+    final messenger = ScaffoldMessenger.of(context);
+
+    return Card(
+      elevation: 0.5,
+      color: Theme.of(context).colorScheme.surfaceVariant.withOpacity(0.35),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: typeColor.withOpacity(0.12),
+          child: Icon(typeIcon, color: typeColor),
+        ),
+        title: Text('${stopped.medicineName} • (موقوف)'),
+        subtitle: Text(
+          'الجرعة: ${stopped.doseText}\nأول جرعة: ${dateFmt.format(stopped.firstTime)} • ${timeFmt.format(stopped.firstTime)}\nتم الإيقاف: ${dateFmt.format(stopped.stoppedAt)}',
+        ),
+        isThreeLine: true,
+        trailing: IconButton(
+          tooltip: 'حذف من الموقوفة',
+          icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+          onPressed: () async {
+            final ok = await showDialog<bool>(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('حذف من قائمة الموقوفة'),
+                content: Text(
+                  'سيتم إزالة الدواء "${stopped.medicineName}" (${stopped.doseText}) من قائمة الأدوية الموقوفة.',
+                ),
+                actions: [
+                  TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+                  TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف')),
+                ],
+              ),
+            );
+            if (ok == true) {
+              await AppData.I.deleteStoppedMedicine(stopped);
+              onChanged();
+              messenger.showSnackBar(
+                const SnackBar(content: Text('تم حذف الدواء من قائمة الموقوفة')),
+              );
+            }
+          },
+        ),
+      ),
+    );
   }
 }
 

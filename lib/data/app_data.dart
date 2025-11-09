@@ -13,6 +13,9 @@ class AppData {
   /// كل الجرعات المجدولة (لا نخفي القديمة)
   final List<Dose> doses = [];
 
+  /// كل الأدوية الموقوفة (لإظهارها في تبويب "كل الأدوية")
+  final List<StoppedMedicine> stoppedMedicines = [];
+
   /// كل مواعيد الأطباء
   final List<Appointment> appointments = [];
 
@@ -54,6 +57,25 @@ class AppData {
           doseText: (e['dose_text'] ?? '').toString(),
           time: t,
           taken: (e['taken'] == 1),
+        );
+      }));
+
+    // stopped medicines
+    final sRows = await db.getStoppedMedicines();
+    stoppedMedicines
+      ..clear()
+      ..addAll(sRows.map((e) {
+        final firstStr = (e['first_time'] ?? '').toString();
+        final stoppedStr = (e['stopped_at'] ?? '').toString();
+        final first = DateTime.tryParse(firstStr) ?? DateTime.now();
+        final stopped = DateTime.tryParse(stoppedStr) ?? first;
+        return StoppedMedicine(
+          id: (e['id'] as int?) ?? (e['id'] as num?)?.toInt(),
+          patientName: (e['patient_name'] ?? '').toString(),
+          medicineName: (e['medicine_name'] ?? '').toString(),
+          doseText: (e['dose_text'] ?? '').toString(),
+          firstTime: first,
+          stoppedAt: stopped,
         );
       }));
 
@@ -185,12 +207,14 @@ class AppData {
     await AppDatabase.I.deletePatientByName(name);
     await AppDatabase.I.deleteDosesByPatient(name);
     await AppDatabase.I.deleteAppointmentsByPatient(name);
+    await AppDatabase.I.deleteStoppedMedicinesByPatient(name);
 
     patients.removeWhere((p) => p.name == name);
     final removed = patients.length < before;
     if (removed) {
       doses.removeWhere((d) => d.patientName == name);
       appointments.removeWhere((a) => a.patientName == name);
+      stoppedMedicines.removeWhere((s) => s.patientName == name);
     }
     return removed;
   }
@@ -226,6 +250,22 @@ class AppData {
       }
     }
     doses.addAll(newDoses);
+
+    // إذا أُعيدت إضافة نفس الدواء بعد إيقافه → احذف من قائمة الموقوفة
+    final seenKeys = <String>{};
+    for (final d in newDoses) {
+      final key = '${d.patientName}|${d.medicineName}|${d.doseText}';
+      if (!seenKeys.add(key)) continue;
+      await AppDatabase.I.deleteStoppedMedicineByKey(
+        patientName: d.patientName,
+        medicineName: d.medicineName,
+        doseText: d.doseText,
+      );
+      stoppedMedicines.removeWhere((s) =>
+          s.patientName == d.patientName &&
+          s.medicineName == d.medicineName &&
+          s.doseText == d.doseText);
+    }
   }
 
   Future<void> replaceDoseGroup({
@@ -261,10 +301,25 @@ class AppData {
     }
 
     doses.removeWhere((d) =>
-    d.patientName == oldPatientName &&
+        d.patientName == oldPatientName &&
         d.medicineName == oldMedicineName &&
         d.doseText == oldDoseText);
     doses.addAll(newDoses);
+
+    final seenKeys = <String>{};
+    for (final d in newDoses) {
+      final key = '${d.patientName}|${d.medicineName}|${d.doseText}';
+      if (!seenKeys.add(key)) continue;
+      await AppDatabase.I.deleteStoppedMedicineByKey(
+        patientName: d.patientName,
+        medicineName: d.medicineName,
+        doseText: d.doseText,
+      );
+      stoppedMedicines.removeWhere((s) =>
+          s.patientName == d.patientName &&
+          s.medicineName == d.medicineName &&
+          s.doseText == d.doseText);
+    }
   }
 
   Future<void> deleteDoseGroup({
@@ -278,9 +333,78 @@ class AppData {
       doseText: doseText,
     );
     doses.removeWhere((d) =>
-    d.patientName == patientName &&
+        d.patientName == patientName &&
         d.medicineName == medicineName &&
         d.doseText == doseText);
+  }
+
+  Future<StoppedMedicine?> stopDoseGroup({
+    required String patientName,
+    required String medicineName,
+    required String doseText,
+  }) async {
+    final matching = doses
+        .where((d) =>
+            d.patientName == patientName &&
+            d.medicineName == medicineName &&
+            d.doseText == doseText)
+        .toList();
+    if (matching.isEmpty) return null;
+
+    matching.sort((a, b) => a.time.compareTo(b.time));
+    final first = matching.first.time;
+    final now = DateTime.now();
+
+    await AppDatabase.I.deleteDoseGroup(
+      patientName: patientName,
+      medicineName: medicineName,
+      doseText: doseText,
+    );
+
+    final id = await AppDatabase.I.insertStoppedMedicine(
+      patientName: patientName,
+      medicineName: medicineName,
+      doseText: doseText,
+      firstTimeIso: first.toIso8601String(),
+      stoppedAtIso: now.toIso8601String(),
+    );
+
+    doses.removeWhere((d) =>
+        d.patientName == patientName &&
+        d.medicineName == medicineName &&
+        d.doseText == doseText);
+
+    stoppedMedicines.removeWhere((s) =>
+        s.patientName == patientName &&
+        s.medicineName == medicineName &&
+        s.doseText == doseText);
+
+    final stopped = StoppedMedicine(
+      id: id,
+      patientName: patientName,
+      medicineName: medicineName,
+      doseText: doseText,
+      firstTime: first,
+      stoppedAt: now,
+    );
+    stoppedMedicines.add(stopped);
+    return stopped;
+  }
+
+  Future<void> deleteStoppedMedicine(StoppedMedicine stopped) async {
+    if (stopped.id != null) {
+      await AppDatabase.I.deleteStoppedMedicineById(stopped.id!);
+    } else {
+      await AppDatabase.I.deleteStoppedMedicineByKey(
+        patientName: stopped.patientName,
+        medicineName: stopped.medicineName,
+        doseText: stopped.doseText,
+      );
+    }
+    stoppedMedicines.removeWhere((s) =>
+        s.patientName == stopped.patientName &&
+        s.medicineName == stopped.medicineName &&
+        s.doseText == stopped.doseText);
   }
 
   Future<void> markDoseTakenByKey({

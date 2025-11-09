@@ -45,6 +45,35 @@ class Dose {
   });
 }
 
+class StoppedMedicine {
+  final int? id;
+  final String patientName;
+  final String medicineName;
+  final String doseText;
+  final DateTime firstTime;
+  final DateTime stoppedAt;
+
+  const StoppedMedicine({
+    this.id,
+    required this.patientName,
+    required this.medicineName,
+    required this.doseText,
+    required this.firstTime,
+    required this.stoppedAt,
+  });
+
+  StoppedMedicine copyWith({int? id}) {
+    return StoppedMedicine(
+      id: id ?? this.id,
+      patientName: patientName,
+      medicineName: medicineName,
+      doseText: doseText,
+      firstTime: firstTime,
+      stoppedAt: stoppedAt,
+    );
+  }
+}
+
 class Appointment {
   final String patientName;
   final String doctorName;
