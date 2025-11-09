@@ -18,7 +18,7 @@ class AppDatabase {
 
     _db = await openDatabase(
       dbPath,
-      version: 1,
+      version: 2,
       onCreate: (db, v) async {
         await db.execute('''
           CREATE TABLE patients(
@@ -60,12 +60,37 @@ class AppDatabase {
           );
         ''');
 
+        await db.execute('''
+          CREATE TABLE stopped_medicines(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            patient_name TEXT NOT NULL,
+            medicine_name TEXT NOT NULL,
+            dose_text TEXT NOT NULL,
+            first_time TEXT NOT NULL,
+            stopped_at TEXT NOT NULL
+          );
+        ''');
+
         // مريض افتراضي
         await db.insert(
           'patients',
           {'name': 'مستخدم', 'gender': null, 'dob': null},
           conflictAlgorithm: ConflictAlgorithm.ignore,
         );
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('''
+            CREATE TABLE IF NOT EXISTS stopped_medicines(
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              patient_name TEXT NOT NULL,
+              medicine_name TEXT NOT NULL,
+              dose_text TEXT NOT NULL,
+              first_time TEXT NOT NULL,
+              stopped_at TEXT NOT NULL
+            );
+          ''');
+        }
       },
     );
   }
@@ -186,6 +211,52 @@ class AppDatabase {
 
   Future<int> deleteDosesByPatient(String patientName) async =>
       db.delete('doses', where: 'patient_name = ?', whereArgs: [patientName]);
+
+  // ================= Stopped medicines =================
+  Future<List<Map<String, Object?>>> getStoppedMedicines() async =>
+      db.query('stopped_medicines', orderBy: 'stopped_at DESC');
+
+  Future<int> insertStoppedMedicine({
+    required String patientName,
+    required String medicineName,
+    required String doseText,
+    required String firstTimeIso,
+    required String stoppedAtIso,
+  }) async {
+    return db.insert('stopped_medicines', {
+      'patient_name': patientName,
+      'medicine_name': medicineName,
+      'dose_text': doseText,
+      'first_time': firstTimeIso,
+      'stopped_at': stoppedAtIso,
+    });
+  }
+
+  Future<int> deleteStoppedMedicineById(int id) async => db.delete(
+        'stopped_medicines',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+
+  Future<int> deleteStoppedMedicineByKey({
+    required String patientName,
+    required String medicineName,
+    required String doseText,
+  }) async {
+    return db.delete(
+      'stopped_medicines',
+      where: 'patient_name = ? AND medicine_name = ? AND dose_text = ?',
+      whereArgs: [patientName, medicineName, doseText],
+    );
+  }
+
+  Future<int> deleteStoppedMedicinesByPatient(String patientName) async {
+    return db.delete(
+      'stopped_medicines',
+      where: 'patient_name = ?',
+      whereArgs: [patientName],
+    );
+  }
 
   // ================= Appointments =================
   Future<List<Map<String, Object?>>> getAppointments() async =>
